@@ -149,4 +149,9 @@ async function handleUpdates() {
 
             offset = update.update_id + 1;
         }
-        await new Promise
+        await new Promise(resolve => setTimeout(resolve, 1000)); // Poll every second
+    }
+}
+
+// Start handling updates
+handleUpdates().catch(console.error);
