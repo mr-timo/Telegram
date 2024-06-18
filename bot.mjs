@@ -5,9 +5,6 @@ import ccxt from 'ccxt';
 const BOT_TOKEN = '6384185718:AAH3CbyAq0N8AgB4A_lwWZvE2fYa7RjLybg';
 const TELEGRAM_API_URL = `https://api.telegram.org/bot${BOT_TOKEN}`;
 
-// Initialize Bybit exchange
-const bybit = new ccxt.bybit();
-
 // Function to get updates from Telegram
 async function getUpdates(offset) {
     const response = await fetch(`${TELEGRAM_API_URL}/getUpdates?offset=${offset}`);
@@ -29,41 +26,35 @@ async function sendMessage(chatId, text) {
     });
 }
 
-// Function to fetch the price for a specified trading pair from Bybit
-async function fetchPrice(symbol) {
+// Function to get crypto price from Bybit
+async function getCryptoPrice(symbol) {
+    const exchange = new ccxt.bybit();
     try {
-        const ticker = await bybit.fetchTicker(symbol);
+        const ticker = await exchange.fetchTicker(symbol);
         return ticker.last;
     } catch (error) {
-        console.error(`Error fetching price for ${symbol}:`, error);
-        return null;
+        throw new Error(`Could not fetch price for symbol: ${symbol}`);
     }
 }
 
 // Function to handle incoming updates
 async function handleUpdates() {
     let offset = 0;
-    const chatStates = {};
-
     while (true) {
         const updates = await getUpdates(offset);
         for (const update of updates) {
             const chatId = update.message.chat.id;
-            const text = update.message.text;
+            const messageText = update.message.text;
 
-            if (!chatStates[chatId]) {
-                // Ask the user for the trading pair symbol
-                await sendMessage(chatId, "Please enter the trading pair symbol (e.g., BTC/USDT):");
-                chatStates[chatId] = 'awaiting_symbol';
-            } else if (chatStates[chatId] === 'awaiting_symbol') {
-                // Fetch and display the price for the specified symbol
-                const price = await fetchPrice(text);
-                if (price !== null) {
-                    await sendMessage(chatId, `The current price of ${text} on Bybit is $${price}`);
-                } else {
-                    await sendMessage(chatId, `Sorry, I couldn't fetch the price for ${text}. Please make sure the symbol is correct.`);
+            if (messageText.toLowerCase() === '/start') {
+                await sendMessage(chatId, 'Hello! Please enter a crypto symbol (e.g., BTC/USDT) to get the current price.');
+            } else {
+                try {
+                    const price = await getCryptoPrice(messageText);
+                    await sendMessage(chatId, `The current price of ${messageText} is $${price}`);
+                } catch (error) {
+                    await sendMessage(chatId, error.message);
                 }
-                chatStates[chatId] = null; // Reset the state
             }
 
             offset = update.update_id + 1;
