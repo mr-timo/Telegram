@@ -77,7 +77,7 @@ async function handleUpdates() {
                     await sendMessage(chatId, 'Please enter the name of the exchange you want to use (e.g., bybit).');
                 } else if (messageText === '3') {
                     userStates[chatId].stage = 'advancedSettings';
-                    await sendMessage(chatId, 'Advanced settings:\n1. Set default exchange\n2. Set default symbol\n3. Back to main menu\nType the number of your choice.');
+                    await sendMessage(chatId, 'Advanced settings:\n1. Set default exchange\n2. Set default symbol\n3. Demo trade: ON/OFF\n4. Back to main menu\nType the number of your choice.');
                 } else {
                     await sendMessage(chatId, 'Invalid choice. Please type the number of your choice.');
                 }
@@ -89,30 +89,64 @@ async function handleUpdates() {
                     userStates[chatId].stage = 'setDefaultSymbol';
                     await sendMessage(chatId, 'Please enter the default crypto symbol you want to set (e.g., BTC/USDT).');
                 } else if (messageText === '3') {
+                    userStates[chatId].stage = 'toggleDemoTrade';
+                    await sendMessage(chatId, 'Do you want to turn demo trade ON or OFF? Type ON or OFF.');
+                } else if (messageText === '4') {
                     userStates[chatId].stage = 'mainMenu';
                     await sendMessage(chatId, 'What would you like to do next?\n1. Get another price\n2. Change exchange\n3. Advanced settings\nType the number of your choice.');
                 } else {
                     await sendMessage(chatId, 'Invalid choice. Please type the number of your choice.');
                 }
-            } else if (userStates[chatId]?.stage === 'setDefaultExchange') {
-                userStates[chatId].defaultExchange = messageText.toLowerCase();
-                userStates[chatId].stage = 'advancedSettings';
-                await sendMessage(chatId, `Default exchange set to ${messageText}.`);
-                await sendMessage(chatId, 'Advanced settings:\n1. Set default exchange\n2. Set default symbol\n3. Back to main menu\nType the number of your choice.');
-            } else if (userStates[chatId]?.stage === 'setDefaultSymbol') {
-                userStates[chatId].defaultSymbol = messageText.toUpperCase();
-                userStates[chatId].stage = 'advancedSettings';
-                await sendMessage(chatId, `Default symbol set to ${messageText}.`);
-                await sendMessage(chatId, 'Advanced settings:\n1. Set default exchange\n2. Set default symbol\n3. Back to main menu\nType the number of your choice.');
+            } else if (userStates[chatId]?.stage === 'toggleDemoTrade') {
+                if (messageText.toUpperCase() === 'ON') {
+                    userStates[chatId].demoTrade = true;
+                    userStates[chatId].stage = 'askTradePair';
+                    await sendMessage(chatId, 'Demo trade is ON. Please enter the trading pair (e.g., BTC/USDT).');
+                } else if (messageText.toUpperCase() === 'OFF') {
+                    userStates[chatId].demoTrade = false;
+                    userStates[chatId].stage = 'advancedSettings';
+                    await sendMessage(chatId, 'Demo trade is OFF.');
+                    await sendMessage(chatId, 'Advanced settings:\n1. Set default exchange\n2. Set default symbol\n3. Demo trade: ON/OFF\n4. Back to main menu\nType the number of your choice.');
+                } else {
+                    await sendMessage(chatId, 'Invalid choice. Please type ON or OFF.');
+                }
+            } else if (userStates[chatId]?.stage === 'askTradePair') {
+                userStates[chatId].tradePair = messageText.toUpperCase();
+                userStates[chatId].stage = 'askTradeTime';
+                await sendMessage(chatId, 'Please enter the time you want to enter the trade in YYYY-MM-DD HH:MM:SS format (UTC).');
+            } else if (userStates[chatId]?.stage === 'askTradeTime') {
+                userStates[chatId].tradeTime = messageText;
+                const exchangeName = userStates[chatId].exchange;
+                const tradePair = userStates[chatId].tradePair;
+                try {
+                    const exchange = new ccxt[exchangeName]();
+                    const since = new Date(userStates[chatId].tradeTime).getTime();
+                    const ohlcv = await exchange.fetchOHLCV(tradePair, '1m', since, 1);
+                    const entryPrice = ohlcv[0][1]; // Opening price of the first fetched candle
+                    userStates[chatId].entryPrice = entryPrice;
+                    await sendMessage(chatId, `Entered trade for ${tradePair} at $${entryPrice} on ${exchangeName} at ${userStates[chatId].tradeTime}.`);
+                    userStates[chatId].stage = 'trackTrade';
+                    await sendMessage(chatId, 'Tracking trade. To get the current PnL, type /pnl.');
+                } catch (error) {
+                    await sendMessage(chatId, `Error fetching entry price: ${error.message}`);
+                    userStates[chatId].stage = 'askTradeTime';
+                    await sendMessage(chatId, 'Please enter the time you want to enter the trade in YYYY-MM-DD HH:MM:SS format (UTC).');
+                }
+            } else if (messageText === '/pnl' && userStates[chatId]?.stage === 'trackTrade') {
+                const exchangeName = userStates[chatId].exchange;
+                const tradePair = userStates[chatId].tradePair;
+                const entryPrice = userStates[chatId].entryPrice;
+                try {
+                    const currentPrice = await getCryptoPrice(exchangeName, tradePair);
+                    const pnl = ((currentPrice - entryPrice) / entryPrice) * 100;
+                    await sendMessage(chatId, `Current price of ${tradePair} is $${currentPrice}.\nYour PnL is ${pnl.toFixed(2)}%.`);
+                } catch (error) {
+                    await sendMessage(chatId, `Error fetching current price: ${error.message}`);
+                }
             } else {
                 await sendMessage(chatId, 'Please start the conversation with /start.');
             }
 
             offset = update.update_id + 1;
         }
-        await new Promise(resolve => setTimeout(resolve, 1000)); // Poll every second
-    }
-}
-
-// Start handling updates
-handleUpdates().catch(console.error);
+        await new Promise
