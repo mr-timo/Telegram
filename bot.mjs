@@ -30,6 +30,15 @@ async function sendMessage(chatId, text, options = {}) {
     });
 }
 
+// Function to send a message with inline keyboard
+async function sendInlineKeyboard(chatId, text, keyboard) {
+    await sendMessage(chatId, text, {
+        reply_markup: {
+            inline_keyboard: keyboard
+        }
+    });
+}
+
 // Function to get crypto price from the specified exchange
 async function getCryptoPrice(exchangeName, symbol) {
     const exchange = new ccxt[exchangeName]();
@@ -47,10 +56,11 @@ async function handleUpdates() {
     while (true) {
         const updates = await getUpdates(offset);
         for (const update of updates) {
-            const chatId = update.message.chat.id;
-            const messageText = update.message.text.trim();
+            const chatId = update.message?.chat.id || update.callback_query?.message.chat.id;
+            const messageText = update.message?.text?.trim();
+            const callbackData = update.callback_query?.data;
 
-            if (messageText.toLowerCase() === '/start') {
+            if (messageText && messageText.toLowerCase() === '/start') {
                 userStates[chatId] = { stage: 'askExchange' };
                 await sendMessage(chatId, 'Welcome! Please enter the name of the exchange you want to use (e.g., bybit).');
             } else if (userStates[chatId]?.stage === 'askExchange') {
@@ -67,86 +77,129 @@ async function handleUpdates() {
                     await sendMessage(chatId, error.message);
                 }
                 userStates[chatId].stage = 'mainMenu';
-                await sendMessage(chatId, 'What would you like to do next?\n1. Get another price\n2. Change exchange\n3. Advanced settings\nType the number of your choice.');
-            } else if (userStates[chatId]?.stage === 'mainMenu') {
-                if (messageText === '1') {
+                await sendInlineKeyboard(chatId, 'What would you like to do next?', [
+                    [{ text: 'Get another price', callback_data: 'getPrice' }],
+                    [{ text: 'Change exchange', callback_data: 'changeExchange' }],
+                    [{ text: 'Advanced settings', callback_data: 'advancedSettings' }]
+                ]);
+            } else if (callbackData) {
+                if (callbackData === 'getPrice') {
                     userStates[chatId].stage = 'askSymbol';
                     await sendMessage(chatId, `Please enter the crypto symbol (e.g., BTC/USDT) for ${userStates[chatId].exchange}.`);
-                } else if (messageText === '2') {
+                } else if (callbackData === 'changeExchange') {
                     userStates[chatId].stage = 'askExchange';
                     await sendMessage(chatId, 'Please enter the name of the exchange you want to use (e.g., bybit).');
-                } else if (messageText === '3') {
+                } else if (callbackData === 'advancedSettings') {
                     userStates[chatId].stage = 'advancedSettings';
-                    await sendMessage(chatId, 'Advanced settings:\n1. Set default exchange\n2. Set default symbol\n3. Demo trade: ON/OFF\n4. Back to main menu\nType the number of your choice.');
-                } else {
-                    await sendMessage(chatId, 'Invalid choice. Please type the number of your choice.');
-                }
-            } else if (userStates[chatId]?.stage === 'advancedSettings') {
-                if (messageText === '1') {
+                    await sendInlineKeyboard(chatId, 'Advanced settings:', [
+                        [{ text: 'Set default exchange', callback_data: 'setDefaultExchange' }],
+                        [{ text: 'Set default symbol', callback_data: 'setDefaultSymbol' }],
+                        [{ text: 'Demo trade: ON/OFF', callback_data: 'toggleDemoTrade' }],
+                        [{ text: 'Back to main menu', callback_data: 'backToMainMenu' }]
+                    ]);
+                } else if (callbackData === 'setDefaultExchange') {
                     userStates[chatId].stage = 'setDefaultExchange';
                     await sendMessage(chatId, 'Please enter the default exchange you want to set (e.g., bybit).');
-                } else if (messageText === '2') {
+                } else if (callbackData === 'setDefaultSymbol') {
                     userStates[chatId].stage = 'setDefaultSymbol';
                     await sendMessage(chatId, 'Please enter the default crypto symbol you want to set (e.g., BTC/USDT).');
-                } else if (messageText === '3') {
+                } else if (callbackData === 'toggleDemoTrade') {
                     userStates[chatId].stage = 'toggleDemoTrade';
-                    await sendMessage(chatId, 'Do you want to turn demo trade ON or OFF? Type ON or OFF.');
-                } else if (messageText === '4') {
+                    await sendInlineKeyboard(chatId, 'Do you want to turn demo trade ON or OFF?', [
+                        [{ text: 'ON', callback_data: 'demoTradeOn' }],
+                        [{ text: 'OFF', callback_data: 'demoTradeOff' }]
+                    ]);
+                } else if (callbackData === 'backToMainMenu') {
                     userStates[chatId].stage = 'mainMenu';
-                    await sendMessage(chatId, 'What would you like to do next?\n1. Get another price\n2. Change exchange\n3. Advanced settings\nType the number of your choice.');
-                } else {
-                    await sendMessage(chatId, 'Invalid choice. Please type the number of your choice.');
-                }
-            } else if (userStates[chatId]?.stage === 'toggleDemoTrade') {
-                if (messageText.toUpperCase() === 'ON') {
+                    await sendInlineKeyboard(chatId, 'What would you like to do next?', [
+                        [{ text: 'Get another price', callback_data: 'getPrice' }],
+                        [{ text: 'Change exchange', callback_data: 'changeExchange' }],
+                        [{ text: 'Advanced settings', callback_data: 'advancedSettings' }]
+                    ]);
+                } else if (callbackData === 'demoTradeOn') {
                     userStates[chatId].demoTrade = true;
                     userStates[chatId].stage = 'askTradePair';
                     await sendMessage(chatId, 'Demo trade is ON. Please enter the trading pair (e.g., BTC/USDT).');
-                } else if (messageText.toUpperCase() === 'OFF') {
+                } else if (callbackData === 'demoTradeOff') {
                     userStates[chatId].demoTrade = false;
                     userStates[chatId].stage = 'advancedSettings';
                     await sendMessage(chatId, 'Demo trade is OFF.');
-                    await sendMessage(chatId, 'Advanced settings:\n1. Set default exchange\n2. Set default symbol\n3. Demo trade: ON/OFF\n4. Back to main menu\nType the number of your choice.');
-                } else {
-                    await sendMessage(chatId, 'Invalid choice. Please type ON or OFF.');
+                    await sendInlineKeyboard(chatId, 'Advanced settings:', [
+                        [{ text: 'Set default exchange', callback_data: 'setDefaultExchange' }],
+                        [{ text: 'Set default symbol', callback_data: 'setDefaultSymbol' }],
+                        [{ text: 'Demo trade: ON/OFF', callback_data: 'toggleDemoTrade' }],
+                        [{ text: 'Back to main menu', callback_data: 'backToMainMenu' }]
+                    ]);
+                } else if (callbackData === 'checkPNL') {
+                    const exchangeName = userStates[chatId].exchange;
+                    const symbol = userStates[chatId].tradePair;
+                    try {
+                        const currentPrice = await getCryptoPrice(exchangeName, symbol);
+                        const entryPrice = userStates[chatId].entryPrice;
+                        const pnl = ((currentPrice - entryPrice) / entryPrice) * 100;
+                        const unrealizedProfit = (currentPrice - entryPrice) * userStates[chatId].quantity;
+                        await sendMessage(chatId, `Entry price: $${entryPrice}\nCurrent price: $${currentPrice}\nPNL: ${pnl.toFixed(2)}%\nUnrealized profit: $${unrealizedProfit.toFixed(2)}`);
+                    } catch (error) {
+                        await sendMessage(chatId, error.message);
+                    }
+                    await sendInlineKeyboard(chatId, 'What would you like to do next?', [
+                        [{ text: 'Get another price', callback_data: 'getPrice' }],
+                        [{ text: 'Change exchange', callback_data: 'changeExchange' }],
+                        [{ text: 'Advanced settings', callback_data: 'advancedSettings' }],
+                        [{ text: 'Check PNL', callback_data: 'checkPNL' }]
+                    ]);
                 }
+            } else if (userStates[chatId]?.stage === 'setDefaultExchange') {
+                userStates[chatId].defaultExchange = messageText.toLowerCase();
+                userStates[chatId].stage = 'advancedSettings';
+                await sendMessage(chatId, `Default exchange set to ${messageText}.`);
+                await sendInlineKeyboard(chatId, 'Advanced settings:', [
+                    [{ text: 'Set default exchange', callback_data: 'setDefaultExchange' }],
+                    [{ text: 'Set default symbol', callback_data: 'setDefaultSymbol' }],
+                    [{ text: 'Demo trade: ON/OFF', callback_data: 'toggleDemoTrade' }],
+                    [{ text: 'Back to main menu', callback_data: 'backToMainMenu' }]
+                ]);
+            } else if (userStates[chatId]?.stage === 'setDefaultSymbol') {
+                userStates[chatId].defaultSymbol = messageText.toUpperCase();
+                userStates[chatId].stage = 'advancedSettings';
+                await sendMessage(chatId, `Default symbol set to ${messageText}.`);
+                await sendInlineKeyboard(chatId, 'Advanced settings:', [
+                    [{ text: 'Set default exchange', callback_data: 'setDefaultExchange' }],
+                    [{ text: 'Set default symbol', callback_data: 'setDefaultSymbol' }],
+                    [{ text: 'Demo trade: ON/OFF', callback_data: 'toggleDemoTrade' }],
+                    [{ text: 'Back to main menu', callback_data: 'backToMainMenu' }]
+                ]);
             } else if (userStates[chatId]?.stage === 'askTradePair') {
                 userStates[chatId].tradePair = messageText.toUpperCase();
                 userStates[chatId].stage = 'askTradeTime';
-                await sendMessage(chatId, 'Please enter the time you want to enter the trade in YYYY-MM-DD HH:MM:SS format (UTC).');
+                await sendMessage(chatId, 'Please enter the time you want to enter the trade (YYYY-MM-DD HH:MM).');
             } else if (userStates[chatId]?.stage === 'askTradeTime') {
                 userStates[chatId].tradeTime = messageText;
                 const exchangeName = userStates[chatId].exchange;
-                const tradePair = userStates[chatId].tradePair;
+                const symbol = userStates[chatId].tradePair;
                 try {
-                    const exchange = new ccxt[exchangeName]();
-                    const since = new Date(userStates[chatId].tradeTime).getTime();
-                    const ohlcv = await exchange.fetchOHLCV(tradePair, '1m', since, 1);
-                    const entryPrice = ohlcv[0][1]; // Opening price of the first fetched candle
-                    userStates[chatId].entryPrice = entryPrice;
-                    await sendMessage(chatId, `Entered trade for ${tradePair} at $${entryPrice} on ${exchangeName} at ${userStates[chatId].tradeTime}.`);
-                    userStates[chatId].stage = 'trackTrade';
-                    await sendMessage(chatId, 'Tracking trade. To get the current PnL, type /pnl.');
+                    const entryTime = new Date(userStates[chatId].tradeTime).getTime();
+                    const currentTime = Date.now();
+                    if (entryTime > currentTime) {
+                        await sendMessage(chatId, 'The trade entry time cannot be in the future. Please enter a valid past time.');
+                    } else {
+                        const price = await getCryptoPrice(exchangeName, symbol);
+                        userStates[chatId].entryPrice = price;
+                        userStates[chatId].quantity = 1; // Assume 1 unit for simplicity
+                        await sendMessage(chatId, `Entered trade for ${symbol} at $${price} on ${exchangeName}.`);
+                        userStates[chatId].stage = 'mainMenu';
+                        await sendInlineKeyboard(chatId, 'What would you like to do next?', [
+                            [{ text: 'Get another price', callback_data: 'getPrice' }],
+                            [{ text: 'Change exchange', callback_data: 'changeExchange' }],
+                            [{ text: 'Advanced settings', callback_data: 'advancedSettings' }],
+                            [{ text: 'Check PNL', callback_data: 'checkPNL' }]
+                        ]);
+                    }
                 } catch (error) {
-                    await sendMessage(chatId, `Error fetching entry price: ${error.message}`);
-                    userStates[chatId].stage = 'askTradeTime';
-                    await sendMessage(chatId, 'Please enter the time you want to enter the trade in YYYY-MM-DD HH:MM:SS format (UTC).');
+                    await sendMessage(chatId, error.message);
                 }
-            } else if (messageText === '/pnl' && userStates[chatId]?.stage === 'trackTrade') {
-                const exchangeName = userStates[chatId].exchange;
-                const tradePair = userStates[chatId].tradePair;
-                const entryPrice = userStates[chatId].entryPrice;
-                try {
-                    const currentPrice = await getCryptoPrice(exchangeName, tradePair);
-                    const pnl = ((currentPrice - entryPrice) / entryPrice) * 100;
-                    await sendMessage(chatId, `Current price of ${tradePair} is $${currentPrice}.\nYour PnL is ${pnl.toFixed(2)}%.`);
-                } catch (error) {
-                    await sendMessage(chatId, `Error fetching current price: ${error.message}`);
-                }
-            } else {
-                await sendMessage(chatId, 'Please start the conversation with /start.');
             }
-
+            
             offset = update.update_id + 1;
         }
         await new Promise(resolve => setTimeout(resolve, 1000)); // Poll every second
