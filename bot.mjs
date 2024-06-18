@@ -5,12 +5,8 @@ import ccxt from 'ccxt';
 const BOT_TOKEN = '6384185718:AAH3CbyAq0N8AgB4A_lwWZvE2fYa7RjLybg';
 const TELEGRAM_API_URL = `https://api.telegram.org/bot${BOT_TOKEN}`;
 
-// User state and preferences
+// User state to keep track of the conversation flow
 const userStates = {};
-const userPreferences = {};
-
-// List of supported exchanges
-const supportedExchanges = ['binance', 'bybit', 'coinbase', 'kraken', 'bitfinex'];
 
 // Function to get updates from Telegram
 async function getUpdates(offset) {
@@ -20,7 +16,7 @@ async function getUpdates(offset) {
 }
 
 // Function to send a message to a user
-async function sendMessage(chatId, text) {
+async function sendMessage(chatId, text, options = {}) {
     await fetch(`${TELEGRAM_API_URL}/sendMessage`, {
         method: 'POST',
         headers: {
@@ -28,7 +24,8 @@ async function sendMessage(chatId, text) {
         },
         body: JSON.stringify({
             chat_id: chatId,
-            text: text
+            text: text,
+            ...options
         })
     });
 }
@@ -54,43 +51,61 @@ async function handleUpdates() {
             const messageText = update.message.text.trim();
 
             if (messageText.toLowerCase() === '/start') {
-                userStates[chatId] = { stage: 'initial' };
-                await sendMessage(chatId, 'Welcome! Use /settings to configure your exchange or /pair to check a crypto price.');
-            } else if (messageText.toLowerCase() === '/settings') {
                 userStates[chatId] = { stage: 'askExchange' };
-                const exchangeOptions = supportedExchanges.join(', ');
-                await sendMessage(chatId, `Please enter the name of the exchange you want to use (${exchangeOptions}). To remove the saved exchange, type 'remove'.`);
+                await sendMessage(chatId, 'Welcome! Please enter the name of the exchange you want to use (e.g., bybit).');
             } else if (userStates[chatId]?.stage === 'askExchange') {
-                if (messageText.toLowerCase() === 'remove') {
-                    delete userPreferences[chatId];
-                    await sendMessage(chatId, 'Your saved exchange has been removed.');
-                } else if (supportedExchanges.includes(messageText.toLowerCase())) {
-                    userPreferences[chatId] = { exchange: messageText.toLowerCase() };
-                    await sendMessage(chatId, `Your preferred exchange is set to ${messageText.toLowerCase()}.`);
-                } else {
-                    const exchangeOptions = supportedExchanges.join(', ');
-                    await sendMessage(chatId, `Invalid exchange. Please enter a valid exchange name (${exchangeOptions}).`);
-                }
-                delete userStates[chatId];  // Clear the user state after setting/removing the exchange
-            } else if (messageText.toLowerCase() === '/pair') {
-                if (userPreferences[chatId]?.exchange) {
-                    userStates[chatId] = { stage: 'askSymbol' };
-                    await sendMessage(chatId, 'Please enter the crypto symbol (e.g., BTC/USDT).');
-                } else {
-                    await sendMessage(chatId, 'Please set your preferred exchange first using /settings.');
-                }
+                userStates[chatId].exchange = messageText.toLowerCase();
+                userStates[chatId].stage = 'askSymbol';
+                await sendMessage(chatId, `Got it! Now, please enter the crypto symbol (e.g., BTC/USDT) for ${messageText}.`);
             } else if (userStates[chatId]?.stage === 'askSymbol') {
-                const exchangeName = userPreferences[chatId]?.exchange;
+                const exchangeName = userStates[chatId].exchange;
                 const symbol = messageText.toUpperCase();
                 try {
                     const price = await getCryptoPrice(exchangeName, symbol);
-                    await sendMessage(chatId, `The current price of ${symbol} on ${exchangeName} is $${price}`);
+                    await sendMessage(chatId, `*The current price of ${symbol} on ${exchangeName} is $${price}*`, { parse_mode: 'Markdown' });
                 } catch (error) {
                     await sendMessage(chatId, error.message);
                 }
-                delete userStates[chatId];  // Clear the user state after providing the price
+                userStates[chatId].stage = 'mainMenu';
+                await sendMessage(chatId, 'What would you like to do next?\n1. Get another price\n2. Change exchange\n3. Advanced settings\nType the number of your choice.');
+            } else if (userStates[chatId]?.stage === 'mainMenu') {
+                if (messageText === '1') {
+                    userStates[chatId].stage = 'askSymbol';
+                    await sendMessage(chatId, `Please enter the crypto symbol (e.g., BTC/USDT) for ${userStates[chatId].exchange}.`);
+                } else if (messageText === '2') {
+                    userStates[chatId].stage = 'askExchange';
+                    await sendMessage(chatId, 'Please enter the name of the exchange you want to use (e.g., bybit).');
+                } else if (messageText === '3') {
+                    userStates[chatId].stage = 'advancedSettings';
+                    await sendMessage(chatId, 'Advanced settings:\n1. Set default exchange\n2. Set default symbol\n3. Back to main menu\nType the number of your choice.');
+                } else {
+                    await sendMessage(chatId, 'Invalid choice. Please type the number of your choice.');
+                }
+            } else if (userStates[chatId]?.stage === 'advancedSettings') {
+                if (messageText === '1') {
+                    userStates[chatId].stage = 'setDefaultExchange';
+                    await sendMessage(chatId, 'Please enter the default exchange you want to set (e.g., bybit).');
+                } else if (messageText === '2') {
+                    userStates[chatId].stage = 'setDefaultSymbol';
+                    await sendMessage(chatId, 'Please enter the default crypto symbol you want to set (e.g., BTC/USDT).');
+                } else if (messageText === '3') {
+                    userStates[chatId].stage = 'mainMenu';
+                    await sendMessage(chatId, 'What would you like to do next?\n1. Get another price\n2. Change exchange\n3. Advanced settings\nType the number of your choice.');
+                } else {
+                    await sendMessage(chatId, 'Invalid choice. Please type the number of your choice.');
+                }
+            } else if (userStates[chatId]?.stage === 'setDefaultExchange') {
+                userStates[chatId].defaultExchange = messageText.toLowerCase();
+                userStates[chatId].stage = 'advancedSettings';
+                await sendMessage(chatId, `Default exchange set to ${messageText}.`);
+                await sendMessage(chatId, 'Advanced settings:\n1. Set default exchange\n2. Set default symbol\n3. Back to main menu\nType the number of your choice.');
+            } else if (userStates[chatId]?.stage === 'setDefaultSymbol') {
+                userStates[chatId].defaultSymbol = messageText.toUpperCase();
+                userStates[chatId].stage = 'advancedSettings';
+                await sendMessage(chatId, `Default symbol set to ${messageText}.`);
+                await sendMessage(chatId, 'Advanced settings:\n1. Set default exchange\n2. Set default symbol\n3. Back to main menu\nType the number of your choice.');
             } else {
-                await sendMessage(chatId, 'Invalid command. Use /start to begin, /settings to set your exchange, or /pair to check a crypto price.');
+                await sendMessage(chatId, 'Please start the conversation with /start.');
             }
 
             offset = update.update_id + 1;
