@@ -2,7 +2,7 @@ import fetch from 'node-fetch';
 import ccxt from 'ccxt';
 
 // Replace with your actual bot token
-const BOT_TOKEN = 'YOUR_BOT_TOKEN_HERE';
+const BOT_TOKEN = '6384185718:AAH3CbyAq0N8AgB4A_lwWZvE2fYa7RjLybg';
 const TELEGRAM_API_URL = `https://api.telegram.org/bot${BOT_TOKEN}`;
 
 // User state and preferences
