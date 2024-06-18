@@ -56,9 +56,8 @@ async function handleUpdates() {
     while (true) {
         const updates = await getUpdates(offset);
         for (const update of updates) {
-            const chatId = update.message?.chat.id || update.callback_query?.message.chat.id;
+            const chatId = update.message?.chat?.id || update.callback_query?.message?.chat?.id;
             const messageText = update.message?.text?.trim();
-            const callbackData = update.callback_query?.data;
 
             if (messageText && messageText.toLowerCase() === '/start') {
                 userStates[chatId] = { stage: 'askExchange' };
@@ -82,7 +81,9 @@ async function handleUpdates() {
                     [{ text: 'Change exchange', callback_data: 'changeExchange' }],
                     [{ text: 'Advanced settings', callback_data: 'advancedSettings' }]
                 ]);
-            } else if (callbackData) {
+            } else if (update.callback_query) {
+                const callbackData = update.callback_query.data;
+
                 if (callbackData === 'getPrice') {
                     userStates[chatId].stage = 'askSymbol';
                     await sendMessage(chatId, `Please enter the crypto symbol (e.g., BTC/USDT) for ${userStates[chatId].exchange}.`);
@@ -130,24 +131,18 @@ async function handleUpdates() {
                         [{ text: 'Demo trade: ON/OFF', callback_data: 'toggleDemoTrade' }],
                         [{ text: 'Back to main menu', callback_data: 'backToMainMenu' }]
                     ]);
-                } else if (callbackData === 'checkPNL') {
-                    const exchangeName = userStates[chatId].exchange;
+                } else if (callbackData === 'getPnl') {
+                    const exchangeName = userStates[chatId].defaultExchange;
                     const symbol = userStates[chatId].tradePair;
+                    const entryPrice = userStates[chatId].entryPrice;
+
                     try {
                         const currentPrice = await getCryptoPrice(exchangeName, symbol);
-                        const entryPrice = userStates[chatId].entryPrice;
                         const pnl = ((currentPrice - entryPrice) / entryPrice) * 100;
-                        const unrealizedProfit = (currentPrice - entryPrice) * userStates[chatId].quantity;
-                        await sendMessage(chatId, `Entry price: $${entryPrice}\nCurrent price: $${currentPrice}\nPNL: ${pnl.toFixed(2)}%\nUnrealized profit: $${unrealizedProfit.toFixed(2)}`);
+                        await sendMessage(chatId, `The current PnL for ${symbol} is ${pnl.toFixed(2)}%`);
                     } catch (error) {
-                        await sendMessage(chatId, error.message);
+                        await sendMessage(chatId, `Error fetching current price: ${error.message}`);
                     }
-                    await sendInlineKeyboard(chatId, 'What would you like to do next?', [
-                        [{ text: 'Get another price', callback_data: 'getPrice' }],
-                        [{ text: 'Change exchange', callback_data: 'changeExchange' }],
-                        [{ text: 'Advanced settings', callback_data: 'advancedSettings' }],
-                        [{ text: 'Check PNL', callback_data: 'checkPNL' }]
-                    ]);
                 }
             } else if (userStates[chatId]?.stage === 'setDefaultExchange') {
                 userStates[chatId].defaultExchange = messageText.toLowerCase();
@@ -171,38 +166,66 @@ async function handleUpdates() {
                 ]);
             } else if (userStates[chatId]?.stage === 'askTradePair') {
                 userStates[chatId].tradePair = messageText.toUpperCase();
-                userStates[chatId].stage = 'askTradeTime';
-                await sendMessage(chatId, 'Please enter the time you want to enter the trade (YYYY-MM-DD HH:MM).');
-            } else if (userStates[chatId]?.stage === 'askTradeTime') {
-                userStates[chatId].tradeTime = messageText;
-                const exchangeName = userStates[chatId].exchange;
+                userStates[chatId].stage = 'askTradeDelay';
+                const currentTime = new Date().toISOString().replace('T', ' ').substr(0, 19);
+                await sendMessage(chatId, `Current time is ${currentTime}. Please enter the delay in minutes or hours (e.g., 2m for 2 minutes, 1h for 1 hour).`);
+            } else if (userStates[chatId]?.stage === 'askTradeDelay') {
+                const delay = messageText.toLowerCase();
+                const now = new Date();
+                let tradeTime;
+
+                if (delay.endsWith('m')) {
+                    const minutes = parseInt(delay.slice(0, -1), 10);
+                    tradeTime = new Date(now.getTime() + minutes * 60000);
+                } else if (delay.endsWith('h')) {
+                    const hours = parseInt(delay.slice(0, -1), 10);
+                    tradeTime = new Date(now.getTime() + hours * 3600000);
+                } else {
+                    await sendMessage(chatId, 'Invalid format. Please enter the delay in minutes (e.g., 2m) or hours (e.g., 1h).');
+                    continue;
+                }
+
+                userStates[chatId].tradeTime = tradeTime.toISOString().replace('T', ' ').substr(0, 19);
+                const exchangeName = userStates[chatId].defaultExchange;
                 const symbol = userStates[chatId].tradePair;
+                const time = userStates[chatId].tradeTime;
+
                 try {
-                    const entryTime = new Date(userStates[chatId].tradeTime).getTime();
-                    const currentTime = Date.now();
-                    if (entryTime > currentTime) {
-                        await sendMessage(chatId, 'The trade entry time cannot be in the future. Please enter a valid past time.');
-                    } else {
-                        const price = await getCryptoPrice(exchangeName, symbol);
-                        userStates[chatId].entryPrice = price;
-                        userStates[chatId].quantity = 1; // Assume 1 unit for simplicity
-                        await sendMessage(chatId, `Entered trade for ${symbol} at $${price} on ${exchangeName}.`);
-                        userStates[chatId].stage = 'mainMenu';
-                        await sendInlineKeyboard(chatId, 'What would you like to do next?', [
-                            [{ text: 'Get another price', callback_data: 'getPrice' }],
-                            [{ text: 'Change exchange', callback_data: 'changeExchange' }],
-                            [{ text: 'Advanced settings', callback_data: 'advancedSettings' }],
-                            [{ text: 'Check PNL', callback_data: 'checkPNL' }]
-                        ]);
-                    }
+                    const timestamp = new Date(time).getTime();
+                    setTimeout(async () => {
+                        try {
+                            const historicalData = await getCryptoPriceAtTime(exchangeName, symbol, timestamp);
+                            userStates[chatId].entryPrice = historicalData.close;
+                            await sendMessage(chatId, `Trade entered for ${symbol} at ${time} with price $${userStates[chatId].entryPrice}`);
+                            await sendInlineKeyboard(chatId, 'What would you like to do next?', [
+                                [{ text: 'Get PnL', callback_data: 'getPnl' }],
+                                [{ text: 'Change exchange', callback_data: 'changeExchange' }],
+                                [{ text: 'Advanced settings', callback_data: 'advancedSettings' }]
+                            ]);
+                        } catch (error) {
+                            await sendMessage(chatId, `Error fetching historical data: ${error.message}`);
+                        }
+                    }, timestamp - Date.now());
                 } catch (error) {
-                    await sendMessage(chatId, error.message);
+                    await sendMessage(chatId, `Error calculating trade time: ${error.message}`);
                 }
             }
-            
             offset = update.update_id + 1;
         }
         await new Promise(resolve => setTimeout(resolve, 1000)); // Poll every second
+    }
+}
+
+// Function to get historical price from the specified exchange at a specific time
+async function getCryptoPriceAtTime(exchangeName, symbol, timestamp) {
+    const exchange = new ccxt[exchangeName]();
+    try {
+        const historicalData = await exchange.fetchOHLCV(symbol, '1m', timestamp, 1);
+        return {
+            close: historicalData[0][4] // Closing price
+        };
+    } catch (error) {
+        throw new Error(`Could not fetch historical price for symbol: ${symbol} on exchange: ${exchangeName} at timestamp: ${timestamp}`);
     }
 }
 
