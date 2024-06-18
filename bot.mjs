@@ -2,11 +2,15 @@ import fetch from 'node-fetch';
 import ccxt from 'ccxt';
 
 // Replace with your actual bot token
-const BOT_TOKEN = '6384185718:AAH3CbyAq0N8AgB4A_lwWZvE2fYa7RjLybg';
+const BOT_TOKEN = 'YOUR_BOT_TOKEN_HERE';
 const TELEGRAM_API_URL = `https://api.telegram.org/bot${BOT_TOKEN}`;
 
-// User state to keep track of the conversation flow
+// User state and preferences
 const userStates = {};
+const userPreferences = {};
+
+// List of supported exchanges
+const supportedExchanges = ['binance', 'bybit', 'coinbase', 'kraken', 'bitfinex'];
 
 // Function to get updates from Telegram
 async function getUpdates(offset) {
@@ -50,14 +54,33 @@ async function handleUpdates() {
             const messageText = update.message.text.trim();
 
             if (messageText.toLowerCase() === '/start') {
+                userStates[chatId] = { stage: 'initial' };
+                await sendMessage(chatId, 'Welcome! Use /settings to configure your exchange or /pair to check a crypto price.');
+            } else if (messageText.toLowerCase() === '/settings') {
                 userStates[chatId] = { stage: 'askExchange' };
-                await sendMessage(chatId, 'Welcome! Please enter the name of the exchange you want to use (e.g., bybit).');
+                const exchangeOptions = supportedExchanges.join(', ');
+                await sendMessage(chatId, `Please enter the name of the exchange you want to use (${exchangeOptions}). To remove the saved exchange, type 'remove'.`);
             } else if (userStates[chatId]?.stage === 'askExchange') {
-                userStates[chatId].exchange = messageText.toLowerCase();
-                userStates[chatId].stage = 'askSymbol';
-                await sendMessage(chatId, `Got it! Now, please enter the crypto symbol (e.g., BTC/USDT) for ${messageText}.`);
+                if (messageText.toLowerCase() === 'remove') {
+                    delete userPreferences[chatId];
+                    await sendMessage(chatId, 'Your saved exchange has been removed.');
+                } else if (supportedExchanges.includes(messageText.toLowerCase())) {
+                    userPreferences[chatId] = { exchange: messageText.toLowerCase() };
+                    await sendMessage(chatId, `Your preferred exchange is set to ${messageText.toLowerCase()}.`);
+                } else {
+                    const exchangeOptions = supportedExchanges.join(', ');
+                    await sendMessage(chatId, `Invalid exchange. Please enter a valid exchange name (${exchangeOptions}).`);
+                }
+                delete userStates[chatId];  // Clear the user state after setting/removing the exchange
+            } else if (messageText.toLowerCase() === '/pair') {
+                if (userPreferences[chatId]?.exchange) {
+                    userStates[chatId] = { stage: 'askSymbol' };
+                    await sendMessage(chatId, 'Please enter the crypto symbol (e.g., BTC/USDT).');
+                } else {
+                    await sendMessage(chatId, 'Please set your preferred exchange first using /settings.');
+                }
             } else if (userStates[chatId]?.stage === 'askSymbol') {
-                const exchangeName = userStates[chatId].exchange;
+                const exchangeName = userPreferences[chatId]?.exchange;
                 const symbol = messageText.toUpperCase();
                 try {
                     const price = await getCryptoPrice(exchangeName, symbol);
@@ -67,7 +90,7 @@ async function handleUpdates() {
                 }
                 delete userStates[chatId];  // Clear the user state after providing the price
             } else {
-                await sendMessage(chatId, 'Please start the conversation with /start.');
+                await sendMessage(chatId, 'Invalid command. Use /start to begin, /settings to set your exchange, or /pair to check a crypto price.');
             }
 
             offset = update.update_id + 1;
