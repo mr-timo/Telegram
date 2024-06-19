@@ -34,8 +34,12 @@ export default function startBot() {
     // Ask for the entry time in the specified format
     bot.sendMessage(chatId, 'Please enter the entry time in the format "YYYY-MM-DD hh:mm am/pm" (e.g., "2024-06-19 06:10 pm"):');
     bot.once('message', (msg) => {
-      const entryTime = msg.text;
-      checkTradeCondition(entryTime, exchangeName, chatId, callbackQuery.message.message_id);
+      const entryTime = new Date(msg.text);
+      if (isNaN(entryTime)) {
+        bot.sendMessage(chatId, 'Invalid date format. Please try again.');
+      } else {
+        checkTradeCondition(entryTime, exchangeName, chatId, callbackQuery.message.message_id);
+      }
     });
   });
 
@@ -82,8 +86,8 @@ export default function startBot() {
 
   function checkTradeCondition(entryTime, exchangeName, chatId, messageId) {
     const checkInterval = setInterval(() => {
-      const currentTime = new Date().toLocaleString('en-US', { hour12: true });
-      if (entryTime === currentTime) {
+      const currentTime = new Date();
+      if (currentTime >= entryTime) {
         clearInterval(checkInterval);
         startDemoTrade(exchangeName, chatId, messageId);
       }
@@ -109,9 +113,8 @@ export default function startBot() {
                         `PNL: ${demoTrades[chatId].pnl} USDT\n` +
                         `Unrealized Profit: ${demoTrades[chatId].unrealizedProfit} USDT`;
 
-        await bot.editMessageText(message, {
-          chat_id: chatId,
-          message_id: callbackQuery.message.message_id,
+        await bot.deleteMessage(chatId, callbackQuery.message.message_id); // Delete old message
+        await bot.sendMessage(chatId, message, {
           reply_markup: {
             inline_keyboard: [
               [{ text: 'Refresh', callback_data: 'refresh' }],
@@ -124,10 +127,8 @@ export default function startBot() {
       }
     } else if (action === 'close_trade' && demoTrades[chatId]) {
       delete demoTrades[chatId];
-      await bot.editMessageText('Demo trade closed.', {
-        chat_id: chatId,
-        message_id: callbackQuery.message.message_id
-      });
+      await bot.deleteMessage(chatId, callbackQuery.message.message_id); // Delete old message
+      await bot.sendMessage(chatId, 'Demo trade closed.');
     }
   }
 
