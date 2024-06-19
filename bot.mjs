@@ -37,9 +37,12 @@ async function fetchPriceAndSendMessage() {
             bot.sendMessage(chatId, `Entry price set to ${entryPrice}.`);
         }
 
-        // Calculate PNL
-        const pnl = currentPrice - entryPrice;
+        // Calculate the percentage increase
         const percentageIncrease = ((currentPrice - entryPrice) / entryPrice) * 100;
+
+        // Calculate the profit based on the initial investment amount
+        const profit = (percentageIncrease / 100) * initialAmount;
+        const totalAmount = initialAmount + profit;
 
         // Create the message
         const message = `
@@ -47,7 +50,9 @@ Exchange: ${selectedExchange}
 Pair: ${selectedSymbol}
 Entry Price: ${entryPrice}
 Current Price: ${currentPrice}
-PNL: ${pnl}
+Initial Investment: ${initialAmount}
+Profit: ${profit.toFixed(2)}
+Total Amount: ${totalAmount.toFixed(2)}
 Percentage Increase: ${percentageIncrease.toFixed(2)}%
         `;
 
@@ -59,7 +64,7 @@ Percentage Increase: ${percentageIncrease.toFixed(2)}%
                 reply_markup: {
                     inline_keyboard: [
                         [{ text: 'Refresh', callback_data: 'refresh' }],
-                        [{ text: 'Clear History', callback_data: 'clear' }]
+                        [{ text: 'Back', callback_data: 'back_to_menu' }]
                     ]
                 }
             });
@@ -68,7 +73,7 @@ Percentage Increase: ${percentageIncrease.toFixed(2)}%
                 reply_markup: {
                     inline_keyboard: [
                         [{ text: 'Refresh', callback_data: 'refresh' }],
-                        [{ text: 'Clear History', callback_data: 'clear' }]
+                        [{ text: 'Back', callback_data: 'back_to_menu' }]
                     ]
                 }
             });
@@ -79,13 +84,26 @@ Percentage Increase: ${percentageIncrease.toFixed(2)}%
     }
 }
 
+// Function to display the main menu
+function showMenu() {
+    bot.sendMessage(chatId, 'Menu:', {
+        reply_markup: {
+            inline_keyboard: [
+                [{ text: 'Buy', callback_data: 'buy' }, { text: 'Position', callback_data: 'position' }],
+                [{ text: 'Settings', callback_data: 'settings' }]
+            ]
+        }
+    });
+}
+
 // Function to display the exchange selection menu
 function showExchangeSelection() {
     bot.sendMessage(chatId, 'Please select an exchange:', {
         reply_markup: {
             inline_keyboard: [
-                [{ text: 'KuCoin', callback_data: 'select_exchange_kucoin' }],
-                [{ text: 'Coinbase', callback_data: 'select_exchange_coinbase' }]
+                [{ text: 'KuCoin', callback_data: 'set_exchange_kucoin' }],
+                [{ text: 'Coinbase', callback_data: 'set_exchange_coinbase' }],
+                [{ text: 'Back', callback_data: 'back_to_menu' }]
             ]
         }
     });
@@ -99,7 +117,13 @@ function showSymbolAndAmountInput() {
         bot.sendMessage(chatId, 'Please enter the initial amount to invest:');
         bot.once('message', (msg) => {
             initialAmount = parseFloat(msg.text);
-            fetchPriceAndSendMessage();
+            bot.sendMessage(chatId, 'Settings updated.', {
+                reply_markup: {
+                    inline_keyboard: [
+                        [{ text: 'Back to Menu', callback_data: 'back_to_menu' }]
+                    ]
+                }
+            });
         });
     });
 }
@@ -112,7 +136,7 @@ bot.onText(/\/start/, (msg) => {
     selectedExchange = null;  // Reset selected exchange
     selectedSymbol = null;  // Reset selected symbol
     initialAmount = null;  // Reset initial amount
-    showExchangeSelection();
+    showMenu();
 });
 
 // Listen for callback queries from inline keyboard
@@ -120,18 +144,46 @@ bot.on('callback_query', async (query) => {
     const { data } = query;
     if (data === 'refresh') {
         await fetchPriceAndSendMessage();
-    } else if (data === 'clear') {
-        chatId = null;
-        entryPrice = null;
-        lastMessageId = null;
-        selectedExchange = null;
-        selectedSymbol = null;
-        initialAmount = null;
-        bot.sendMessage(query.message.chat.id, 'History cleared. Please start the bot again with /start.');
-    } else if (data === 'select_exchange_kucoin') {
+    } else if (data === 'back_to_menu') {
+        showMenu();
+    } else if (data === 'buy') {
+        if (selectedExchange && selectedSymbol && initialAmount) {
+            entryPrice = null;  // Enter a new demo trade
+            await fetchPriceAndSendMessage();
+            bot.sendMessage(chatId, 'Entered a new demo trade.', {
+                reply_markup: {
+                    inline_keyboard: [
+                        [{ text: 'Back to Menu', callback_data: 'back_to_menu' }]
+                    ]
+                }
+            });
+        } else {
+            bot.sendMessage(chatId, 'Please set up your settings first.', {
+                reply_markup: {
+                    inline_keyboard: [
+                        [{ text: 'Back to Menu', callback_data: 'back_to_menu' }]
+                    ]
+                }
+            });
+        }
+    } else if (data === 'position') {
+        if (entryPrice !== null) {
+            await fetchPriceAndSendMessage();
+        } else {
+            bot.sendMessage(chatId, 'No active position. Please enter a trade first.', {
+                reply_markup: {
+                    inline_keyboard: [
+                        [{ text: 'Back to Menu', callback_data: 'back_to_menu' }]
+                    ]
+                }
+            });
+        }
+    } else if (data === 'settings') {
+        showExchangeSelection();
+    } else if (data === 'set_exchange_kucoin') {
         selectedExchange = 'kucoin';
         showSymbolAndAmountInput();
-    } else if (data === 'select_exchange_coinbase') {
+    } else if (data === 'set_exchange_coinbase') {
         selectedExchange = 'coinbase';
         showSymbolAndAmountInput();
     }
