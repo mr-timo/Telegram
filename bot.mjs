@@ -1,6 +1,6 @@
 import TelegramBot from 'node-telegram-bot-api';
 import ccxt from 'ccxt';
-import createServer from './In.js';
+import createServer from './In.mjs';
 
 const token = '6384185718:AAH3CbyAq0N8AgB4A_lwWZvE2fYa7RjLybg';
 
