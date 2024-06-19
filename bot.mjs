@@ -8,6 +8,7 @@ export default function startBot() {
   const bot = new TelegramBot(token, { polling: true });
 
   const demoTrades = {};
+  const tradeCheckInterval = 1000; // Interval in milliseconds to check the trade condition
 
   bot.onText(/\/start/, (msg) => {
     bot.sendMessage(msg.chat.id, 'Welcome to Crypto Trade Bot! Please select an exchange:', {
@@ -30,6 +31,15 @@ export default function startBot() {
       return;
     }
 
+    // Ask for the entry time in the specified format
+    bot.sendMessage(chatId, 'Please enter the entry time in the format "YYYY-MM-DD hh:mm am/pm" (e.g., "2024-06-19 06:10 pm"):');
+    bot.once('message', (msg) => {
+      const entryTime = msg.text;
+      checkTradeCondition(entryTime, exchangeName, chatId, callbackQuery.message.message_id);
+    });
+  });
+
+  async function startDemoTrade(exchangeName, chatId, messageId) {
     if (!demoTrades[chatId]) {
       demoTrades[chatId] = {
         exchange: exchangeName,
@@ -37,73 +47,47 @@ export default function startBot() {
         currentPrice: 0,
         pnl: 0,
         unrealizedProfit: 0,
-        timeToEnter: null,
       };
     }
 
-    bot.sendMessage(chatId, 'Please enter the time to enter the trade in HH:MM AM/PM format (e.g., 03:45 PM):');
-    bot.once('message', async (msg) => {
-      const timeToEnter = msg.text;
-      demoTrades[chatId].timeToEnter = timeToEnter;
+    try {
+      const exchangeInstance = new ccxt[exchangeName]();
+      await exchangeInstance.loadMarkets();
+      const ticker = await exchangeInstance.fetchTicker('BTC/USDT');
+      const currentPrice = ticker.last;
 
-      const message = `Demo trade setup for ${exchangeName}:\n` +
-                      `Entry time: ${demoTrades[chatId].timeToEnter}`;
+      demoTrades[chatId].entryPrice = currentPrice;
+      demoTrades[chatId].currentPrice = currentPrice;
 
-      await bot.sendMessage(chatId, message);
+      const message = `Demo trade started on ${exchangeName}:\n` +
+                      `Entry price: ${demoTrades[chatId].entryPrice} USDT\n` +
+                      `Current price: ${demoTrades[chatId].currentPrice} USDT\n` +
+                      `PNL: ${demoTrades[chatId].pnl}\n` +
+                      `Unrealized Profit: ${demoTrades[chatId].unrealizedProfit}`;
 
-      checkTimeToEnterTrade(chatId);
-    });
-  });
-
-  function convertTo24HourFormat(time12h) {
-    const [time, modifier] = time12h.split(' ');
-    let [hours, minutes] = time.split(':');
-    if (hours === '12') {
-      hours = '00';
+      await bot.editMessageText(message, {
+        chat_id: chatId,
+        message_id: messageId,
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: 'Refresh', callback_data: 'refresh' }],
+            [{ text: 'Close Demo Trade', callback_data: 'close_trade' }],
+          ]
+        }
+      });
+    } catch (error) {
+      await bot.sendMessage(chatId, `Error: ${error.message}`);
     }
-    if (modifier === 'PM') {
-      hours = parseInt(hours, 10) + 12;
-    }
-    return `${hours.padStart(2, '0')}:${minutes}`;
   }
 
-  async function checkTimeToEnterTrade(chatId) {
-    const interval = setInterval(async () => {
-      const now = new Date();
-      const currentTime = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
-
-      if (demoTrades[chatId] && convertTo24HourFormat(demoTrades[chatId].timeToEnter) === convertTo24HourFormat(currentTime)) {
-        clearInterval(interval);
-
-        const exchangeName = demoTrades[chatId].exchange;
-        try {
-          const exchangeInstance = new ccxt[exchangeName]();
-          await exchangeInstance.loadMarkets();
-          const ticker = await exchangeInstance.fetchTicker('BTC/USDT');
-          const currentPrice = ticker.last;
-
-          demoTrades[chatId].entryPrice = currentPrice;
-          demoTrades[chatId].currentPrice = currentPrice;
-
-          const message = `Demo trade started on ${exchangeName}:\n` +
-                          `Entry price: ${demoTrades[chatId].entryPrice} USDT\n` +
-                          `Current price: ${demoTrades[chatId].currentPrice} USDT\n` +
-                          `PNL: ${demoTrades[chatId].pnl}\n` +
-                          `Unrealized Profit: ${demoTrades[chatId].unrealizedProfit}`;
-
-          await bot.sendMessage(chatId, message, {
-            reply_markup: {
-              inline_keyboard: [
-                [{ text: 'Refresh', callback_data: 'refresh' }],
-                [{ text: 'Close Demo Trade', callback_data: 'close_trade' }],
-              ]
-            }
-          });
-        } catch (error) {
-          await bot.sendMessage(chatId, `Error: ${error.message}`);
-        }
+  function checkTradeCondition(entryTime, exchangeName, chatId, messageId) {
+    const checkInterval = setInterval(() => {
+      const currentTime = new Date().toLocaleString('en-US', { hour12: true });
+      if (entryTime === currentTime) {
+        clearInterval(checkInterval);
+        startDemoTrade(exchangeName, chatId, messageId);
       }
-    }, 10000); // Check every 10 seconds
+    }, tradeCheckInterval);
   }
 
   async function handleDemoActions(callbackQuery, action, chatId) {
