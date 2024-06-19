@@ -2,7 +2,7 @@ import TelegramBot from 'node-telegram-bot-api';
 import ccxt from 'ccxt';
 import http from './In.js';
 
-const token = '6384185718:AAH3CbyAq0N8AgB4A_lwWZvE2fYa7RjLybg';
+const token = process.env.TELEGRAM_BOT_TOKEN || 'your_token_here';
 
 export default function startBot() {
   const bot = new TelegramBot(token, { polling: true });
@@ -30,7 +30,6 @@ export default function startBot() {
       return;
     }
 
-    // Start demo trading
     if (!demoTrades[chatId]) {
       demoTrades[chatId] = {
         exchange: exchangeName,
@@ -41,49 +40,20 @@ export default function startBot() {
       };
     }
 
-    const exchangeInstance = new ccxt[exchangeName]();
-    await exchangeInstance.loadMarkets();
-    const ticker = await exchangeInstance.fetchTicker('BTC/USDT');
-    const currentPrice = ticker.last;
-
-    demoTrades[chatId].entryPrice = currentPrice;
-    demoTrades[chatId].currentPrice = currentPrice;
-
-    const message = `Demo trade started on ${exchangeName}:\n` +
-                    `Entry price: ${demoTrades[chatId].entryPrice} USDT\n` +
-                    `Current price: ${demoTrades[chatId].currentPrice} USDT\n` +
-                    `PNL: ${demoTrades[chatId].pnl}\n` +
-                    `Unrealized Profit: ${demoTrades[chatId].unrealizedProfit}`;
-
-    await bot.editMessageText(message, {
-      chat_id: chatId,
-      message_id: callbackQuery.message.message_id,
-      reply_markup: {
-        inline_keyboard: [
-          [{ text: 'Refresh', callback_data: 'refresh' }],
-          [{ text: 'Close Demo Trade', callback_data: 'close_trade' }],
-        ]
-      }
-    });
-  });
-
-  async function handleDemoActions(callbackQuery, action, chatId) {
-    if (action === 'refresh' && demoTrades[chatId]) {
-      const exchangeName = demoTrades[chatId].exchange;
+    try {
       const exchangeInstance = new ccxt[exchangeName]();
       await exchangeInstance.loadMarkets();
       const ticker = await exchangeInstance.fetchTicker('BTC/USDT');
       const currentPrice = ticker.last;
 
+      demoTrades[chatId].entryPrice = currentPrice;
       demoTrades[chatId].currentPrice = currentPrice;
-      demoTrades[chatId].pnl = currentPrice - demoTrades[chatId].entryPrice;
-      demoTrades[chatId].unrealizedProfit = demoTrades[chatId].pnl * 1; // Assuming 1 BTC for simplicity
 
-      const message = `Demo trade on ${exchangeName} updated:\n` +
+      const message = `Demo trade started on ${exchangeName}:\n` +
                       `Entry price: ${demoTrades[chatId].entryPrice} USDT\n` +
                       `Current price: ${demoTrades[chatId].currentPrice} USDT\n` +
-                      `PNL: ${demoTrades[chatId].pnl} USDT\n` +
-                      `Unrealized Profit: ${demoTrades[chatId].unrealizedProfit} USDT`;
+                      `PNL: ${demoTrades[chatId].pnl}\n` +
+                      `Unrealized Profit: ${demoTrades[chatId].unrealizedProfit}`;
 
       await bot.editMessageText(message, {
         chat_id: chatId,
@@ -95,6 +65,43 @@ export default function startBot() {
           ]
         }
       });
+    } catch (error) {
+      await bot.sendMessage(chatId, `Error: ${error.message}`);
+    }
+  });
+
+  async function handleDemoActions(callbackQuery, action, chatId) {
+    if (action === 'refresh' && demoTrades[chatId]) {
+      try {
+        const exchangeName = demoTrades[chatId].exchange;
+        const exchangeInstance = new ccxt[exchangeName]();
+        await exchangeInstance.loadMarkets();
+        const ticker = await exchangeInstance.fetchTicker('BTC/USDT');
+        const currentPrice = ticker.last;
+
+        demoTrades[chatId].currentPrice = currentPrice;
+        demoTrades[chatId].pnl = currentPrice - demoTrades[chatId].entryPrice;
+        demoTrades[chatId].unrealizedProfit = demoTrades[chatId].pnl * 1; // Assuming 1 BTC for simplicity
+
+        const message = `Demo trade on ${exchangeName} updated:\n` +
+                        `Entry price: ${demoTrades[chatId].entryPrice} USDT\n` +
+                        `Current price: ${demoTrades[chatId].currentPrice} USDT\n` +
+                        `PNL: ${demoTrades[chatId].pnl} USDT\n` +
+                        `Unrealized Profit: ${demoTrades[chatId].unrealizedProfit} USDT`;
+
+        await bot.editMessageText(message, {
+          chat_id: chatId,
+          message_id: callbackQuery.message.message_id,
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: 'Refresh', callback_data: 'refresh' }],
+              [{ text: 'Close Demo Trade', callback_data: 'close_trade' }],
+            ]
+          }
+        });
+      } catch (error) {
+        await bot.sendMessage(chatId, `Error: ${error.message}`);
+      }
     } else if (action === 'close_trade' && demoTrades[chatId]) {
       delete demoTrades[chatId];
       await bot.editMessageText('Demo trade closed.', {
