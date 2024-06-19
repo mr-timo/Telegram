@@ -142,9 +142,10 @@ function showSymbolAndAmountInput() {
                                     initialAmount = parseFloat(msg.text);
                                     bot.deleteMessage(chatId, message.message_id).catch(() => {});
                                     bot.sendMessage(chatId, `Initial amount set to ${initialAmount}.`)
+                                        clearLastPrompt();
                                         .then(() => {
-                                            clearLastPrompt()
-                                      //      showMenu();
+                                       //     clearLastPrompt()
+                                          showMenu();
                                         });
                                 });
                             });
@@ -183,6 +184,7 @@ bot.on('callback_query', async (query) => {
                     ]
                 }
             });
+            clearLastPrompt();
         } else {
             bot.sendMessage(chatId, 'Please set up your settings first.', {
                 reply_markup: {
@@ -192,6 +194,7 @@ bot.on('callback_query', async (query) => {
                 }
             });
         }
+        clearLastPrompt();
     } else if (data === 'position') {
         clearLastPrompt();
         if (entryPrice !== null) {
@@ -205,6 +208,7 @@ bot.on('callback_query', async (query) => {
                 }
             });
         }
+    clearLastPrompt();
     } else if (data === 'settings') {
         showExchangeSelection();
     } else if (data === 'set_exchange_kucoin') {
