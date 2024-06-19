@@ -26,10 +26,11 @@ export default function startBot() {
     const chatId = callbackQuery.message.chat.id;
 
     if (exchangeName === 'refresh' || exchangeName === 'close_trade') {
-      handleDemoActions(callbackQuery, exchangeName, chatId);
+      await handleDemoActions(callbackQuery, exchangeName, chatId);
       return;
     }
 
+    // Start demo trading
     if (!demoTrades[chatId]) {
       demoTrades[chatId] = {
         exchange: exchangeName,
@@ -54,7 +55,9 @@ export default function startBot() {
                     `PNL: ${demoTrades[chatId].pnl}\n` +
                     `Unrealized Profit: ${demoTrades[chatId].unrealizedProfit}`;
 
-    bot.sendMessage(chatId, message, {
+    await bot.editMessageText(message, {
+      chat_id: chatId,
+      message_id: callbackQuery.message.message_id,
       reply_markup: {
         inline_keyboard: [
           [{ text: 'Refresh', callback_data: 'refresh' }],
@@ -74,7 +77,7 @@ export default function startBot() {
 
       demoTrades[chatId].currentPrice = currentPrice;
       demoTrades[chatId].pnl = currentPrice - demoTrades[chatId].entryPrice;
-      demoTrades[chatId].unrealizedProfit = demoTrades[chatId].pnl * 1;
+      demoTrades[chatId].unrealizedProfit = demoTrades[chatId].pnl * 1; // Assuming 1 BTC for simplicity
 
       const message = `Demo trade on ${exchangeName} updated:\n` +
                       `Entry price: ${demoTrades[chatId].entryPrice} USDT\n` +
@@ -82,7 +85,9 @@ export default function startBot() {
                       `PNL: ${demoTrades[chatId].pnl} USDT\n` +
                       `Unrealized Profit: ${demoTrades[chatId].unrealizedProfit} USDT`;
 
-      bot.sendMessage(chatId, message, {
+      await bot.editMessageText(message, {
+        chat_id: chatId,
+        message_id: callbackQuery.message.message_id,
         reply_markup: {
           inline_keyboard: [
             [{ text: 'Refresh', callback_data: 'refresh' }],
@@ -92,7 +97,10 @@ export default function startBot() {
       });
     } else if (action === 'close_trade' && demoTrades[chatId]) {
       delete demoTrades[chatId];
-      bot.sendMessage(chatId, 'Demo trade closed.');
+      await bot.editMessageText('Demo trade closed.', {
+        chat_id: chatId,
+        message_id: callbackQuery.message.message_id
+      });
     }
   }
 
