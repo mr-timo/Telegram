@@ -143,7 +143,8 @@ function showSymbolAndAmountInput() {
                                     bot.deleteMessage(chatId, message.message_id).catch(() => {});
                                     bot.sendMessage(chatId, `Initial amount set to ${initialAmount}.`)
                                         .then(() => {
-                                            showMenu();
+                                            clearLastPrompt()
+                                      //      showMenu();
                                         });
                                 });
                             });
