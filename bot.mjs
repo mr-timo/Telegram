@@ -142,9 +142,9 @@ function showSymbolAndAmountInput() {
                                     initialAmount = parseFloat(msg.text);
                                     bot.deleteMessage(chatId, message.message_id).catch(() => {});
                                     bot.sendMessage(chatId, `Initial amount set to ${initialAmount}.`)
-                                        clearLastPrompt();
+                                        
                                         .then(() => {
-                                       //     clearLastPrompt()
+                                       
                                           showMenu();
                                         });
                                 });
@@ -169,6 +169,7 @@ bot.onText(/\/start/, (msg) => {
 bot.on('callback_query', async (query) => {
     const { data } = query;
     if (data === 'refresh') {
+        clearLastPrompt();
         await fetchPriceAndSendMessage();
     } else if (data === 'back_to_menu') {
         showMenu();
@@ -184,8 +185,9 @@ bot.on('callback_query', async (query) => {
                     ]
                 }
             });
-            clearLastPrompt();
+
         } else {
+            clearLastPrompt();
             bot.sendMessage(chatId, 'Please set up your settings first.', {
                 reply_markup: {
                     inline_keyboard: [
@@ -194,12 +196,13 @@ bot.on('callback_query', async (query) => {
                 }
             });
         }
-        clearLastPrompt();
+        
     } else if (data === 'position') {
         clearLastPrompt();
         if (entryPrice !== null) {
             await fetchPriceAndSendMessage();
         } else {
+            clearLastPrompt();
             bot.sendMessage(chatId, 'No active position. Please enter a trade first.', {
                 reply_markup: {
                     inline_keyboard: [
@@ -208,7 +211,7 @@ bot.on('callback_query', async (query) => {
                 }
             });
         }
-    clearLastPrompt();
+    
     } else if (data === 'settings') {
         showExchangeSelection();
     } else if (data === 'set_exchange_kucoin') {
