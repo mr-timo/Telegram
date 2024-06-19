@@ -1,5 +1,6 @@
 import ccxt from 'ccxt';
 import TelegramBot from 'node-telegram-bot-api';
+import http from './In.js';
 
 // Replace with your Telegram bot token
 const telegramToken = '6384185718:AAH3CbyAq0N8AgB4A_lwWZvE2fYa7RjLybg';
