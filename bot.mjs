@@ -1,6 +1,5 @@
 import ccxt from 'ccxt';
 import TelegramBot from 'node-telegram-bot-api';
-import http from './In.js';
 
 // Replace with your Telegram bot token
 const telegramToken = '6384185718:AAH3CbyAq0N8AgB4A_lwWZvE2fYa7RjLybg';
@@ -15,7 +14,6 @@ let lastMessageId = null;
 let selectedExchange = null;
 let selectedSymbol = null;
 let initialAmount = null;
-let lastPromptMessageId = null;
 
 // Function to fetch price and calculate PNL
 async function fetchPriceAndSendMessage() {
@@ -35,7 +33,7 @@ async function fetchPriceAndSendMessage() {
         // If entry price is not set, use the current price as the entry price
         if (entryPrice === null) {
             entryPrice = currentPrice;
-         //   bot.sendMessage(chatId, `Entry price set to ${entryPrice}.`);
+            bot.sendMessage(chatId, `Entry price set to ${entryPrice}.`);
         }
 
         // Calculate the percentage increase
@@ -87,7 +85,7 @@ Percentage Increase: ${percentageIncrease.toFixed(2)}%
 
 // Function to display the main menu
 function showMenu() {
-    clearLastPrompt();
+clearLastPrompt();
     bot.sendMessage(chatId, 'Menu:', {
         reply_markup: {
             inline_keyboard: [
@@ -95,22 +93,12 @@ function showMenu() {
                 [{ text: 'Settings', callback_data: 'settings' }]
             ]
         }
-    }).then(message => {
-        lastPromptMessageId = message.message_id;
     });
-}
-
-// Function to clear the last prompt message
-function clearLastPrompt() {
-    if (lastPromptMessageId) {
-        bot.deleteMessage(chatId, lastPromptMessageId).catch(() => {});
-        lastPromptMessageId = null;
-    }
 }
 
 // Function to display the exchange selection menu
 function showExchangeSelection() {
-    clearLastPrompt();
+clearLastPrompt();
     bot.sendMessage(chatId, 'Please select an exchange:', {
         reply_markup: {
             inline_keyboard: [
@@ -119,49 +107,35 @@ function showExchangeSelection() {
                 [{ text: 'Back', callback_data: 'back_to_menu' }]
             ]
         }
-    }).then(message => {
-        lastPromptMessageId = message.message_id;
     });
 }
 
 // Function to display the symbol and initial amount input form
 function showSymbolAndAmountInput() {
-    clearLastPrompt();
-    bot.sendMessage(chatId, 'Please enter the trading pair symbol (e.g., BTC/USDT):')
-        .then(message => {
-            lastPromptMessageId = message.message_id;
-            bot.once('message', (msg) => {
-                selectedSymbol = msg.text.toUpperCase();
-                bot.deleteMessage(chatId, message.message_id).catch(() => {});
-                bot.sendMessage(chatId, `Trading pair symbol set to ${selectedSymbol}.`)
-                    .then(() => {
-                        bot.sendMessage(chatId, 'Please enter the initial amount to invest:')
-                            .then(message => {
-                                lastPromptMessageId = message.message_id;
-                                bot.once('message', (msg) => {
-                                    initialAmount = parseFloat(msg.text);
-                                    bot.deleteMessage(chatId, message.message_id).catch(() => {});
-                                    bot.sendMessage(chatId, `Initial amount set to ${initialAmount}.`)
-                                        
-                                        .then(() => {
-                                       
-                                          showMenu();
-                                        });
-                                });
-                            });
-                    });
+    bot.sendMessage(chatId, 'Please enter the trading pair symbol (e.g., BTC/USDT):');
+    bot.once('message', (msg) => {
+        selectedSymbol = msg.text.toUpperCase();
+        bot.sendMessage(chatId, 'Please enter the initial amount to invest:');
+        bot.once('message', (msg) => {
+            initialAmount = parseFloat(msg.text);
+            bot.sendMessage(chatId, 'Settings updated.', {
+                reply_markup: {
+                    inline_keyboard: [
+                        [{ text: 'Back to Menu', callback_data: 'back_to_menu' }]
+                    ]
+                }
             });
         });
+    });
 }
 
 // Listen for the /start command
 bot.onText(/\/start/, (msg) => {
     chatId = msg.chat.id;
-  //  entryPrice = null;  // Reset entry price if bot is restarted
+ //   entryPrice = null;  // Reset entry price if bot is restarted
 //    lastMessageId = null;  // Reset last message ID if bot is restarted
 //    selectedExchange = null;  // Reset selected exchange
-//    selectedSymbol = null;  // Reset selected symbol
-//    initialAmount = null;  // Reset initial amount
+//    selectedSymbol = null;  // Reset selected symbol    initialAmount = null;  // Reset initial amount
     showMenu();
 });
 
@@ -169,12 +143,10 @@ bot.onText(/\/start/, (msg) => {
 bot.on('callback_query', async (query) => {
     const { data } = query;
     if (data === 'refresh') {
-        clearLastPrompt();
         await fetchPriceAndSendMessage();
     } else if (data === 'back_to_menu') {
         showMenu();
     } else if (data === 'buy') {
-        clearLastPrompt();
         if (selectedExchange && selectedSymbol && initialAmount) {
             entryPrice = null;  // Enter a new demo trade
             await fetchPriceAndSendMessage();
@@ -185,9 +157,7 @@ bot.on('callback_query', async (query) => {
                     ]
                 }
             });
-
         } else {
-            clearLastPrompt();
             bot.sendMessage(chatId, 'Please set up your settings first.', {
                 reply_markup: {
                     inline_keyboard: [
@@ -196,13 +166,10 @@ bot.on('callback_query', async (query) => {
                 }
             });
         }
-        
     } else if (data === 'position') {
-        clearLastPrompt();
         if (entryPrice !== null) {
             await fetchPriceAndSendMessage();
         } else {
-            clearLastPrompt();
             bot.sendMessage(chatId, 'No active position. Please enter a trade first.', {
                 reply_markup: {
                     inline_keyboard: [
@@ -211,15 +178,16 @@ bot.on('callback_query', async (query) => {
                 }
             });
         }
-    
     } else if (data === 'settings') {
         showExchangeSelection();
     } else if (data === 'set_exchange_kucoin') {
         selectedExchange = 'kucoin';
         showSymbolAndAmountInput();
+        clearLastPrompt();
     } else if (data === 'set_exchange_coinbase') {
         selectedExchange = 'coinbase';
         showSymbolAndAmountInput();
+        clearLastPrompt();
     }
     bot.answerCallbackQuery(query.id);
 });
