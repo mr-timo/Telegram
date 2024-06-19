@@ -10,9 +10,10 @@ bot.onText(/\/start/, (msg) => {
   bot.sendMessage(msg.chat.id, 'Welcome to Crypto Trade Bot! Please select an exchange:', {
     reply_markup: {
       inline_keyboard: [
-        [{ text: 'Binance', callback_data: 'binance' }],
-        [{ text: 'Coinbase Pro', callback_data: 'coinbasepro' }],
-        // Add more exchanges as needed
+        [{text: 'Kucoin', callback_data: 'kucoin' }],
+        [{ text: 'Coinbase', callback_data: 'coinbase' }],
+        [{text: 'Bybit', callback_data: 'bybit' }],
+      
       ]
     }
   });
