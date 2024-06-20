@@ -14,6 +14,21 @@ let lastMessageId = null;
 let selectedExchange = null;
 let selectedSymbol = null;
 let initialAmount = null;
+let messagesToDelete = [];
+
+// Function to delete messages
+async function deleteMessages() {
+    if (chatId) {
+        for (let messageId of messagesToDelete) {
+            try {
+                await bot.deleteMessage(chatId, messageId);
+            } catch (e) {
+                console.log(`Failed to delete message ${messageId}: ${e.message}`);
+            }
+        }
+        messagesToDelete = [];
+    }
+}
 
 // Function to fetch price and calculate PNL
 async function fetchPriceAndSendMessage() {
@@ -21,6 +36,8 @@ async function fetchPriceAndSendMessage() {
         console.log('Chat ID not set.');
         return;
     }
+
+    await deleteMessages(); // Clear old messages
 
     try {
         // Initialize the exchange
@@ -33,7 +50,8 @@ async function fetchPriceAndSendMessage() {
         // If entry price is not set, use the current price as the entry price
         if (entryPrice === null) {
             entryPrice = currentPrice;
-            bot.sendMessage(chatId, `Entry price set to ${entryPrice}.`);
+            const entryMessage = await bot.sendMessage(chatId, `Entry price set to ${entryPrice}.`);
+            messagesToDelete.push(entryMessage.message_id);
         }
 
         // Calculate the percentage increase
@@ -55,38 +73,27 @@ Total Amount: ${totalAmount.toFixed(2)}
 Percentage Increase: ${percentageIncrease.toFixed(2)}%
         `;
 
-        // Edit the last message if it exists, otherwise send a new message
-        if (lastMessageId) {
-            bot.editMessageText(message, {
-                chat_id: chatId,
-                message_id: lastMessageId,
-                reply_markup: {
-                    inline_keyboard: [
-                        [{ text: 'Refresh', callback_data: 'refresh' }],
-                        [{ text: 'Back', callback_data: 'back_to_menu' }]
-                    ]
-                }
-            });
-        } else {
-            const sentMessage = await bot.sendMessage(chatId, message, {
-                reply_markup: {
-                    inline_keyboard: [
-                        [{ text: 'Refresh', callback_data: 'refresh' }],
-                        [{ text: 'Back', callback_data: 'back_to_menu' }]
-                    ]
-                }
-            });
-            lastMessageId = sentMessage.message_id;
-        }
+        // Send a new message
+        const sentMessage = await bot.sendMessage(chatId, message, {
+            reply_markup: {
+                inline_keyboard: [
+                    [{ text: 'Refresh', callback_data: 'refresh' }],
+                    [{ text: 'Back', callback_data: 'back_to_menu' }]
+                ]
+            }
+        });
+        lastMessageId = sentMessage.message_id;
+        messagesToDelete.push(lastMessageId);
     } catch (error) {
         console.error('Error fetching price or sending message:', error);
     }
 }
 
 // Function to display the main menu
-function showMenu() {
-clearLastPrompt();
-    bot.sendMessage(chatId, 'Menu:', {
+async function showMenu() {
+    await deleteMessages(); // Clear old messages
+
+    const menuMessage = await bot.sendMessage(chatId, 'Menu:', {
         reply_markup: {
             inline_keyboard: [
                 [{ text: 'Buy', callback_data: 'buy' }, { text: 'Position', callback_data: 'position' }],
@@ -94,12 +101,14 @@ clearLastPrompt();
             ]
         }
     });
+    messagesToDelete.push(menuMessage.message_id);
 }
 
 // Function to display the exchange selection menu
-function showExchangeSelection() {
-clearLastPrompt();
-    bot.sendMessage(chatId, 'Please select an exchange:', {
+async function showExchangeSelection() {
+    await deleteMessages(); // Clear old messages
+
+    const exchangeMessage = await bot.sendMessage(chatId, 'Please select an exchange:', {
         reply_markup: {
             inline_keyboard: [
                 [{ text: 'KuCoin', callback_data: 'set_exchange_kucoin' }],
@@ -108,87 +117,106 @@ clearLastPrompt();
             ]
         }
     });
+    messagesToDelete.push(exchangeMessage.message_id);
 }
 
 // Function to display the symbol and initial amount input form
-function showSymbolAndAmountInput() {
-    bot.sendMessage(chatId, 'Please enter the trading pair symbol (e.g., BTC/USDT):');
-    bot.once('message', (msg) => {
+async function showSymbolAndAmountInput() {
+    await deleteMessages(); // Clear old messages
+
+    const symbolMessage = await bot.sendMessage(chatId, 'Please enter the trading pair symbol (e.g., BTC/USDT):');
+    messagesToDelete.push(symbolMessage.message_id);
+
+    bot.once('message', async (msg) => {
         selectedSymbol = msg.text.toUpperCase();
-        bot.sendMessage(chatId, 'Please enter the initial amount to invest:');
-        bot.once('message', (msg) => {
+        messagesToDelete.push(msg.message_id); // Track user input message
+
+        const amountMessage = await bot.sendMessage(chatId, 'Please enter the initial amount to invest:');
+        messagesToDelete.push(amountMessage.message_id);
+
+        bot.once('message', async (msg) => {
             initialAmount = parseFloat(msg.text);
-            bot.sendMessage(chatId, 'Settings updated.', {
+            messagesToDelete.push(msg.message_id); // Track user input message
+
+            const confirmationMessage = await bot.sendMessage(chatId, 'Settings updated.', {
                 reply_markup: {
                     inline_keyboard: [
                         [{ text: 'Back to Menu', callback_data: 'back_to_menu' }]
                     ]
                 }
             });
+            messagesToDelete.push(confirmationMessage.message_id);
         });
     });
 }
 
 // Listen for the /start command
-bot.onText(/\/start/, (msg) => {
+bot.onText(/\/start/, async (msg) => {
     chatId = msg.chat.id;
- //   entryPrice = null;  // Reset entry price if bot is restarted
-//    lastMessageId = null;  // Reset last message ID if bot is restarted
-//    selectedExchange = null;  // Reset selected exchange
-//    selectedSymbol = null;  // Reset selected symbol    initialAmount = null;  // Reset initial amount
+    entryPrice = null;  // Reset entry price if bot is restarted
+    lastMessageId = null;  // Reset last message ID if bot is restarted
+    selectedExchange = null;  // Reset selected exchange
+    selectedSymbol = null;  // Reset selected symbol
+    initialAmount = null;  // Reset initial amount
+    await deleteMessages(); // Clear any old messages on /start
     showMenu();
 });
 
 // Listen for callback queries from inline keyboard
 bot.on('callback_query', async (query) => {
     const { data } = query;
+
     if (data === 'refresh') {
         await fetchPriceAndSendMessage();
     } else if (data === 'back_to_menu') {
         showMenu();
     } else if (data === 'buy') {
+        await deleteMessages(); // Clear old messages
         if (selectedExchange && selectedSymbol && initialAmount) {
             entryPrice = null;  // Enter a new demo trade
             await fetchPriceAndSendMessage();
-            bot.sendMessage(chatId, 'Entered a new demo trade.', {
+            const buyMessage = await bot.sendMessage(chatId, 'Entered a new demo trade.', {
                 reply_markup: {
                     inline_keyboard: [
                         [{ text: 'Back to Menu', callback_data: 'back_to_menu' }]
                     ]
                 }
             });
+            messagesToDelete.push(buyMessage.message_id);
         } else {
-            bot.sendMessage(chatId, 'Please set up your settings first.', {
+            const errorMessage = await bot.sendMessage(chatId, 'Please set up your settings first.', {
                 reply_markup: {
                     inline_keyboard: [
                         [{ text: 'Back to Menu', callback_data: 'back_to_menu' }]
                     ]
                 }
             });
+            messagesToDelete.push(errorMessage.message_id);
         }
     } else if (data === 'position') {
+        await deleteMessages(); // Clear old messages
         if (entryPrice !== null) {
             await fetchPriceAndSendMessage();
         } else {
-            bot.sendMessage(chatId, 'No active position. Please enter a trade first.', {
+            const noPositionMessage = await bot.sendMessage(chatId, 'No active position. Please enter a trade first.', {
                 reply_markup: {
                     inline_keyboard: [
                         [{ text: 'Back to Menu', callback_data: 'back_to_menu' }]
                     ]
                 }
             });
+            messagesToDelete.push(noPositionMessage.message_id);
         }
     } else if (data === 'settings') {
         showExchangeSelection();
     } else if (data === 'set_exchange_kucoin') {
         selectedExchange = 'kucoin';
         showSymbolAndAmountInput();
-        clearLastPrompt();
     } else if (data === 'set_exchange_coinbase') {
         selectedExchange = 'coinbase';
         showSymbolAndAmountInput();
-        clearLastPrompt();
     }
+
     bot.answerCallbackQuery(query.id);
 });
 
